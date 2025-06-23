@@ -35,9 +35,10 @@
 #include <linux/unaligned.h>
 #include <linux/bitfield.h>
 #include <linux/bitmap.h>
+#include <linux/delay.h>
 
-MODULE_AUTHOR("Carlos Corbacho");
-MODULE_DESCRIPTION("Acer Laptop WMI Extras Driver");
+MODULE_AUTHOR("Div Sharp");
+MODULE_DESCRIPTION("Modern Acer Laptop WMI Driver");
 MODULE_LICENSE("GPL");
 
 /*
@@ -2362,18 +2363,38 @@ static const struct platform_profile_ops acer_predator_v4_platform_profile_ops =
 
 static int acer_platform_profile_setup(struct platform_device *device)
 {
+    int retry;
+    int max_retries = 10;
+    int retry_delay_ms = 100;
+
     if (quirks->predator_v4 || quirks->nitro_sense || quirks->nitro_v4 || enable_all)
     {
-        platform_profile_device = devm_platform_profile_register(
-            &device->dev, "acer-wmi", NULL, &acer_predator_v4_platform_profile_ops);
-        if (IS_ERR(platform_profile_device))
+        for (retry = 0; retry < max_retries; retry++)
         {
-            pr_warn("Failed to register platform profile, continuing with other features\n");
-            platform_profile_support = false;
-            return 0;
+            platform_profile_device = devm_platform_profile_register(
+                &device->dev, "acer-wmi", NULL, &acer_predator_v4_platform_profile_ops);
+
+            if (!IS_ERR(platform_profile_device))
+            {
+                platform_profile_support = true;
+                pr_info("Platform profile registered successfully on attempt %d\n", retry + 1);
+                return 0;
+            }
+
+            pr_warn("Failed to register platform profile (attempt %d/%d), error: %ld\n",
+                    retry + 1, max_retries, PTR_ERR(platform_profile_device));
+
+            if (retry < max_retries - 1)
+            {
+                msleep(retry_delay_ms);
+                // Increase delay between retries
+                retry_delay_ms = min(retry_delay_ms * 2, 1000);
+            }
         }
 
-        platform_profile_support = true;
+        pr_warn("Failed to register platform profile after %d attempts, continuing with other features\n", max_retries);
+        platform_profile_support = false;
+        return 0;
     }
     return 0;
 }
