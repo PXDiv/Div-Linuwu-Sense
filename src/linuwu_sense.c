@@ -2294,10 +2294,33 @@ acer_predator_v4_platform_profile_probe(void *drvdata, unsigned long *choices)
     unsigned long supported_profiles;
     int err;
 
+    // If enable_all, predator_v4 or nitro_v4 is set, provide all profiles
+    if (enable_all || predator_v4 || nitro_v4)
+    {
+        pr_info("Forcing all platform profiles due to parameter override\n");
+        set_bit(PLATFORM_PROFILE_LOW_POWER, choices);
+        set_bit(PLATFORM_PROFILE_QUIET, choices);
+        set_bit(PLATFORM_PROFILE_BALANCED, choices);
+        set_bit(PLATFORM_PROFILE_BALANCED_PERFORMANCE, choices);
+        set_bit(PLATFORM_PROFILE_PERFORMANCE, choices);
+
+        // Set defaults
+        acer_predator_v4_max_perf = ACER_PREDATOR_V4_THERMAL_PROFILE_PERFORMANCE;
+        last_non_turbo_profile = ACER_PREDATOR_V4_THERMAL_PROFILE_BALANCED;
+        return 0;
+    }
+
     err = WMID_gaming_get_misc_setting(ACER_WMID_MISC_SETTING_SUPPORTED_PROFILES,
                                        (u8 *)&supported_profiles);
     if (err)
+    {
+        pr_warn("Failed to get supported profiles, error: %d\n", err);
         return err;
+    }
+
+    pr_info("Supported thermal profiles bitmap: 0x%lx\n", supported_profiles);
+
+    pr_info("Detecting thermal profiles: ");
 
     /* Iterate through supported profiles in order of increasing performance */
     if (test_bit(ACER_PREDATOR_V4_THERMAL_PROFILE_ECO, &supported_profiles))
@@ -2305,6 +2328,7 @@ acer_predator_v4_platform_profile_probe(void *drvdata, unsigned long *choices)
         set_bit(PLATFORM_PROFILE_LOW_POWER, choices);
         acer_predator_v4_max_perf = ACER_PREDATOR_V4_THERMAL_PROFILE_ECO;
         last_non_turbo_profile = ACER_PREDATOR_V4_THERMAL_PROFILE_ECO;
+        pr_info(" - Low Power profile supported\n");
     }
 
     if (test_bit(ACER_PREDATOR_V4_THERMAL_PROFILE_QUIET, &supported_profiles))
@@ -2312,6 +2336,7 @@ acer_predator_v4_platform_profile_probe(void *drvdata, unsigned long *choices)
         set_bit(PLATFORM_PROFILE_QUIET, choices);
         acer_predator_v4_max_perf = ACER_PREDATOR_V4_THERMAL_PROFILE_QUIET;
         last_non_turbo_profile = ACER_PREDATOR_V4_THERMAL_PROFILE_QUIET;
+        pr_info(" - Quiet profile supported\n");
     }
 
     if (test_bit(ACER_PREDATOR_V4_THERMAL_PROFILE_BALANCED, &supported_profiles))
@@ -2319,6 +2344,7 @@ acer_predator_v4_platform_profile_probe(void *drvdata, unsigned long *choices)
         set_bit(PLATFORM_PROFILE_BALANCED, choices);
         acer_predator_v4_max_perf = ACER_PREDATOR_V4_THERMAL_PROFILE_BALANCED;
         last_non_turbo_profile = ACER_PREDATOR_V4_THERMAL_PROFILE_BALANCED;
+        pr_info(" - Balanced profile supported\n");
     }
 
     if (test_bit(ACER_PREDATOR_V4_THERMAL_PROFILE_PERFORMANCE, &supported_profiles))
@@ -2326,11 +2352,11 @@ acer_predator_v4_platform_profile_probe(void *drvdata, unsigned long *choices)
         set_bit(PLATFORM_PROFILE_BALANCED_PERFORMANCE, choices);
         acer_predator_v4_max_perf = ACER_PREDATOR_V4_THERMAL_PROFILE_PERFORMANCE;
 
-        /* We only use this profile as a fallback option in case no prior
-         * profile is supported.
-         */
         if (last_non_turbo_profile < 0)
+        {
             last_non_turbo_profile = ACER_PREDATOR_V4_THERMAL_PROFILE_PERFORMANCE;
+        }
+        pr_info(" - Balanced Performance profile supported\n");
     }
 
     if (test_bit(ACER_PREDATOR_V4_THERMAL_PROFILE_TURBO, &supported_profiles))
@@ -2338,13 +2364,26 @@ acer_predator_v4_platform_profile_probe(void *drvdata, unsigned long *choices)
         set_bit(PLATFORM_PROFILE_PERFORMANCE, choices);
         acer_predator_v4_max_perf = ACER_PREDATOR_V4_THERMAL_PROFILE_TURBO;
 
-        /* We need to handle the hypothetical case where only the turbo profile
-         * is supported. In this case the turbo toggle will essentially be a
-         * no-op.
-         */
         if (last_non_turbo_profile < 0)
+        {
             last_non_turbo_profile = ACER_PREDATOR_V4_THERMAL_PROFILE_TURBO;
+        }
+        pr_info(" - Performance profile supported\n");
     }
+
+    // Used to set the minimum platform profile to balanced but caused
+    // issues while retying to set the profile as it already found balanced and did'nt retry
+
+    // if (bitmap_empty(choices, PLATFORM_PROFILE_LAST))
+    // {
+    //     pr_warn("No thermal profiles detected, using defaults\n");
+    //     set_bit(PLATFORM_PROFILE_BALANCED, choices);
+    //     acer_predator_v4_max_perf = ACER_PREDATOR_V4_THERMAL_PROFILE_BALANCED;
+    //     last_non_turbo_profile = ACER_PREDATOR_V4_THERMAL_PROFILE_BALANCED;
+    // }
+
+    pr_info("Max performance profile: %d, Last non-turbo profile: %d\n",
+            acer_predator_v4_max_perf, last_non_turbo_profile);
 
     return 0;
 }
@@ -2366,9 +2405,12 @@ static int acer_platform_profile_setup(struct platform_device *device)
     int retry;
     int max_retries = 10;
     int retry_delay_ms = 100;
+    int err;
 
     if (quirks->predator_v4 || quirks->nitro_sense || quirks->nitro_v4 || enable_all)
     {
+        pr_info("Setting up platform profile for gaming laptop\n");
+
         for (retry = 0; retry < max_retries; retry++)
         {
             platform_profile_device = devm_platform_profile_register(
@@ -2378,6 +2420,29 @@ static int acer_platform_profile_setup(struct platform_device *device)
             {
                 platform_profile_support = true;
                 pr_info("Platform profile registered successfully on attempt %d\n", retry + 1);
+
+                // Dont need the logs anymore
+                // // Log the available profiles
+                // if (platform_profile_device)
+                // {
+                //     unsigned long choices = 0;
+                //     err = acer_predator_v4_platform_profile_probe(NULL, &choices);
+                //     if (!err)
+                //     {
+                //         pr_info("Available platform profiles:\n");
+                //         if (test_bit(PLATFORM_PROFILE_LOW_POWER, &choices))
+                //             pr_info("- LOW_POWER\n");
+                //         if (test_bit(PLATFORM_PROFILE_QUIET, &choices))
+                //             pr_info("- QUIET\n");
+                //         if (test_bit(PLATFORM_PROFILE_BALANCED, &choices))
+                //             pr_info("- BALANCED\n");
+                //         if (test_bit(PLATFORM_PROFILE_BALANCED_PERFORMANCE, &choices))
+                //             pr_info("- BALANCED_PERFORMANCE\n");
+                //         if (test_bit(PLATFORM_PROFILE_PERFORMANCE, &choices))
+                //             pr_info("- PERFORMANCE\n");
+                //     }
+                // }
+
                 return 0;
             }
 
@@ -2387,15 +2452,15 @@ static int acer_platform_profile_setup(struct platform_device *device)
             if (retry < max_retries - 1)
             {
                 msleep(retry_delay_ms);
-                // Increase delay between retries
                 retry_delay_ms = min(retry_delay_ms * 2, 1000);
             }
         }
 
-        pr_warn("Failed to register platform profile after %d attempts, continuing with other features\n", max_retries);
+        pr_warn("Failed to register platform profile after %d attempts\n", max_retries);
         platform_profile_support = false;
         return 0;
     }
+
     return 0;
 }
 
@@ -4346,21 +4411,21 @@ static int acer_platform_probe(struct platform_device *device)
         if (err)
             goto error_platform_profile;
     }
-    if (has_cap(ACER_CAP_PREDATOR_SENSE))
+
+    if (has_cap(ACER_CAP_PREDATOR_SENSE) && !has_cap(ACER_CAP_NITRO_SENSE_V4))
     {
-        if (has_cap(ACER_CAP_NITRO_SENSE_V4))
-        {
-            err = sysfs_create_group(&device->dev.kobj, &nitro_sense_v4_attr_group);
-        }
-        else
-        {
-            err = sysfs_create_group(&device->dev.kobj, &preadtor_sense_attr_group);
-        }
+        err = sysfs_create_group(&device->dev.kobj, &preadtor_sense_attr_group);
         if (err)
             goto error_predator_sense;
         acer_predator_state_load();
     }
-
+    if (has_cap(ACER_CAP_PREDATOR_SENSE) && has_cap(ACER_CAP_NITRO_SENSE_V4))
+    {
+        err = sysfs_create_group(&device->dev.kobj, &nitro_sense_v4_attr_group);
+        if (err)
+            goto error_predator_sense;
+        acer_predator_state_load();
+    }
     if (has_cap(ACER_CAP_NITRO_SENSE) && !has_cap(ACER_CAP_NITRO_SENSE_V4))
     {
         err = sysfs_create_group(&device->dev.kobj, &nitro_sense_attr_group);
@@ -4632,7 +4697,7 @@ static int __init acer_wmi_init(void)
 {
     int err;
 
-    pr_info("Acer Laptop ACPI-WMI Extras\n");
+    pr_info("* Initializing Linuwu Sense *\n");
 
     if (dmi_check_system(acer_blacklist))
     {
@@ -4641,6 +4706,14 @@ static int __init acer_wmi_init(void)
     }
 
     find_quirks();
+
+    pr_info("Detected model type: %s\n", dmi_get_system_info(DMI_PRODUCT_NAME));
+
+        if (enable_all || predator_v4 || nitro_v4)
+    {
+        pr_info("Input parameters - enable_all: %d, predator_v4: %d, nitro_v4: %d\n",
+                enable_all, predator_v4, nitro_v4);
+    }
 
     /*
      * The AMW0_GUID1 wmi is not only found on Acer family but also other
