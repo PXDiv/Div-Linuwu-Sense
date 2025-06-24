@@ -1,12 +1,25 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *  Acer WMI Laptop Extras
+ *  Acer WMI Laptop Extras - Linuwu Sense Fork
  *
- *  Copyright (C) 2007-2009	Carlos Corbacho <carlos@strangeworlds.co.uk>
+ *  Original Acer WMI Driver:
+ *    Copyright (C) 2007-2009    Carlos Corbacho <carlos@strangeworlds.co.uk>
+ *    Based on acer_acpi:
+ *      Copyright (C) 2005-2007  E.M. Smith
+ *      Copyright (C) 2007-2008  Carlos Corbacho <cathectic@gmail.com>
  *
- *  Based on acer_acpi:
- *    Copyright (C) 2005-2007	E.M. Smith
- *    Copyright (C) 2007-2008	Carlos Corbacho <cathectic@gmail.com>
+ *  Linuwu Sense Fork:
+ *    Forked and modified extensively for modern Acer laptop support
+ *    by 0x7375646F ("sudo")
+ *    February 2025
+ *    Project: Linuwu-Sense
+ *
+ *  DAMX-Sense Fork:
+ *    Further modified for Div Acer Manager Max (DAMX)
+ *    by Div Sharp <divsharp@gmail.com>
+ *    June 2025
+ *    Project: DAMX-Sense
+ *    Purpose: Enhanced logging, better profile handling, and support for Div Acer Manager Max tooling
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -37,7 +50,7 @@
 #include <linux/bitmap.h>
 #include <linux/delay.h>
 
-MODULE_AUTHOR("Div Sharp");
+MODULE_AUTHOR("Carlos Corbacho, E.M. Smith, 0x7375646F (Linuwu-Sense), modified by Div Sharp (DAMX)");
 MODULE_DESCRIPTION("Modern Acer Laptop WMI Driver");
 MODULE_LICENSE("GPL");
 
@@ -4709,7 +4722,7 @@ static int __init acer_wmi_init(void)
 
     pr_info("Detected model type: %s\n", dmi_get_system_info(DMI_PRODUCT_NAME));
 
-        if (enable_all || predator_v4 || nitro_v4)
+    if (enable_all || predator_v4 || nitro_v4)
     {
         pr_info("Input parameters - enable_all: %d, predator_v4: %d, nitro_v4: %d\n",
                 enable_all, predator_v4, nitro_v4);
