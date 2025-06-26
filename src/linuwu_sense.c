@@ -54,6 +54,8 @@ MODULE_AUTHOR("Carlos Corbacho, E.M. Smith, 0x7375646F (Linuwu-Sense), modified 
 MODULE_DESCRIPTION("Modern Acer Laptop WMI Driver");
 MODULE_LICENSE("GPL");
 
+#define DRIVER_VERSION "25.625"
+
 /*
  * Magic Number
  * Meaning is unknown - this number is required for writing to ACPI for AMW0
@@ -180,6 +182,13 @@ enum acer_wmi_gaming_misc_setting
     ACER_WMID_MISC_SETTING_SUPPORTED_PROFILES = 0x000A,
     ACER_WMID_MISC_SETTING_PLATFORM_PROFILE = 0x000B,
 };
+
+static ssize_t version_show(struct device *dev, struct device_attribute *attr,
+                            char *buf)
+{
+    return sprintf(buf, "%s\n", DRIVER_VERSION);
+}
+static DEVICE_ATTR_RO(version);
 
 static const struct key_entry acer_wmi_keymap[] __initconst = {
     {KE_KEY, 0x01, {KEY_WLAN}},      /* WiFi */
@@ -3871,6 +3880,7 @@ static struct device_attribute battery_limiter = __ATTR(battery_limiter, 0644, p
 static struct device_attribute fan_speed = __ATTR(fan_speed, 0644, predator_fan_speed_show, predator_fan_speed_store);
 static struct device_attribute lcd_override = __ATTR(lcd_override, 0644, predator_lcd_override_show, predator_lcd_override_store);
 static struct attribute *predator_sense_attrs[] = {
+    &dev_attr_version.attr,
     &lcd_override.attr,
     &fan_speed.attr,
     &battery_limiter.attr,
@@ -3887,6 +3897,7 @@ static struct attribute_group nitro_sense_v4_attr_group = {
     .name = "nitro_sense", .attrs = predator_sense_attrs};
 /* nitro sense attributes */
 static struct attribute *nitro_sense_attrs[] = {
+    &dev_attr_version.attr,
     &fan_speed.attr,
     &battery_limiter.attr,
     &battery_calibration.attr,
@@ -4710,7 +4721,7 @@ static int __init acer_wmi_init(void)
 {
     int err;
 
-    pr_info("* Initializing Linuwu Sense *\n");
+    pr_info("Initializing Div-Linuwu-Sense - Version %s\n", DRIVER_VERSION);
 
     if (dmi_check_system(acer_blacklist))
     {
