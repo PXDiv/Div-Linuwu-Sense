@@ -14,7 +14,7 @@
  *    February 2025
  *    Project: Linuwu-Sense
  *
- *  DAMX-Sense Fork:
+ *  Div-Linuwu-Sense Fork:
  *    Further modified for Div Acer Manager Max (DAMX)
  *    by Div Sharp <divsharp@gmail.com>
  *    June 2025
