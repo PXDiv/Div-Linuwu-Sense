@@ -45,16 +45,22 @@
 #include <linux/hwmon.h>
 #include <linux/fs.h>
 #include <linux/units.h>
-#include <linux/unaligned.h>
 #include <linux/bitfield.h>
 #include <linux/bitmap.h>
 #include <linux/delay.h>
+
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,12,0)
+#include <linux/unaligned.h>
+#else
+#include <asm/unaligned.h>
+#endif
 
 MODULE_AUTHOR("Carlos Corbacho, E.M. Smith, 0x7375646F (Linuwu-Sense), modified by Div Sharp (DAMX)");
 MODULE_DESCRIPTION("Modern Acer Laptop WMI Driver");
 MODULE_LICENSE("GPL");
 
-#define DRIVER_VERSION "25.625"
+#define DRIVER_VERSION "25.701"
 
 /*
  * Magic Number
@@ -478,6 +484,18 @@ static void __init set_quirks(void)
     if (quirks->nitro_v4)
         interface->capability |= ACER_CAP_PLATFORM_PROFILE |
                                  ACER_CAP_FAN_SPEED_READ | ACER_CAP_PREDATOR_SENSE | ACER_CAP_NITRO_SENSE_V4;
+
+       if (enable_all) {
+        quirks->four_zone_kb = 1;  // Enable four-zone keyboard
+        interface->capability |= ACER_CAP_PLATFORM_PROFILE |
+                               ACER_CAP_FAN_SPEED_READ | 
+                               ACER_CAP_PREDATOR_SENSE |
+                               ACER_CAP_NITRO_SENSE |
+                               ACER_CAP_NITRO_SENSE_V4 |
+                               ACER_CAP_TURBO_OC |
+                               ACER_CAP_TURBO_LED |
+                               ACER_CAP_TURBO_FAN;
+    }
 }
 
 static int __init dmi_matched(const struct dmi_system_id *dmi)
@@ -931,7 +949,7 @@ static void __init find_quirks(void)
         quirks->predator_v4 = 1;
         quirks->nitro_v4 = 1;
         quirks->nitro_sense = 1;
-        quirks->four_zone_kb = 1;
+        quirks->four_zone_kb = 1;  // This enables four-zone keyboard
         quirks->turbo = 1;
         quirks->cpu_fans = 1;
         quirks->gpu_fans = 1;
@@ -2427,7 +2445,7 @@ static int acer_platform_profile_setup(struct platform_device *device)
     int retry;
     int max_retries = 10;
     int retry_delay_ms = 100;
-    int err;
+    //int err;
 
     if (quirks->predator_v4 || quirks->nitro_sense || quirks->nitro_v4 || enable_all)
     {
@@ -4463,6 +4481,13 @@ static int acer_platform_probe(struct platform_device *device)
         if (err)
             goto error_hwmon;
     }
+
+    if(quirks->four_zone_kb || enable_all){
+        err = sysfs_create_group(&device->dev.kobj, &four_zoned_kb_attr_group);
+        if (err)
+            goto error_four_zone;
+        four_zone_kb_state_load();
+     }
 
     return 0;
 
