@@ -550,6 +550,12 @@ static struct quirk_entry quirk_acer_nitro_an16_43 = {
     .four_zone_kb = 1,
 };
 
+ static struct quirk_entry quirk_acer_nitro_an515_58 = {
+    .nitro_sense = 1,
+    .four_zone_kb = 1,
+ };
+
+
 static struct quirk_entry quirk_acer_nitro = {
     .nitro_sense = 1,
 };
@@ -573,6 +579,7 @@ static struct quirk_entry quirk_lenovo_ideapad_s205 = {
 
 static struct quirk_entry quirk_acer_nitro_v4 = {
     .nitro_v4 = 1,
+    
 };
 
 /* The Aspire One has a dummy ACPI-WMI interface - disable it */
@@ -637,6 +644,15 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
         },
         .driver_data = &quirk_acer_nitro_an16_41,
     },
+         {
+         .callback = dmi_matched,
+         .ident = "Acer Nitro AN515-58",
+         .matches = {
+             DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+             DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-58"),
+         },
+         .driver_data = &quirk_acer_nitro_an515_58,
+     },
     {
         .callback = dmi_matched,
         .ident = "Acer Nitro ANV15-41",
@@ -3916,10 +3932,12 @@ static struct attribute_group nitro_sense_v4_attr_group = {
 /* nitro sense attributes */
 static struct attribute *nitro_sense_attrs[] = {
     &dev_attr_version.attr,
+    //&lcd_override.attr,
     &fan_speed.attr,
     &battery_limiter.attr,
     &battery_calibration.attr,
     &usb_charging.attr,
+    &backlight_timeout.attr,
     NULL};
 static struct attribute_group nitro_sense_attr_group = {
     .name = "nitro_sense", .attrs = nitro_sense_attrs};
