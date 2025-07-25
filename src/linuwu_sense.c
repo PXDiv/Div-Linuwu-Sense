@@ -644,7 +644,7 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
         },
         .driver_data = &quirk_acer_nitro_an16_41,
     },
-         {
+    {
          .callback = dmi_matched,
          .ident = "Acer Nitro AN515-58",
          .matches = {
@@ -652,7 +652,16 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
              DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-58"),
          },
          .driver_data = &quirk_acer_nitro_an515_58,
-     },
+    },
+    {
+         .callback = dmi_matched,
+         .ident = "Acer Nitro AN515-46",
+         .matches = {
+             DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+             DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-46"),
+         },
+         .driver_data = &quirk_acer_nitro_an515_58,
+    },
     {
         .callback = dmi_matched,
         .ident = "Acer Nitro ANV15-41",
