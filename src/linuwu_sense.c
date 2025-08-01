@@ -582,6 +582,15 @@ static struct quirk_entry quirk_acer_nitro_v4 = {
     
 };
 
+static struct quirk_entry quirk_acer_nitro_an517_54 = {
+    .nitro_v4 = 1,
+    .four_zone_kb = 1,
+    .brightness = -1,
+    .cpu_fans = 1,
+    .gpu_fans = 1,
+
+};
+
 /* The Aspire One has a dummy ACPI-WMI interface - disable it */
 static const struct dmi_system_id acer_blacklist[] __initconst = {
     {
@@ -859,6 +868,15 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
             DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "One S1003"),
         },
         .driver_data = (void *)ACER_CAP_KBD_DOCK,
+    },
+    {
+        .callback = dmi_matched,
+        .ident = "Acer Nitro AN517-54",
+        .matches = {
+            DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+            DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN517-54"),
+        },
+        .driver_data = &quirk_acer_nitro_an517_54,
     },
     {}};
 
