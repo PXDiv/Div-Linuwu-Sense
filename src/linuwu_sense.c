@@ -530,6 +530,12 @@ static struct quirk_entry quirk_acer_predator_ph315_53 = {
     .gpu_fans = 1,
 };
 
+static struct quirk_entry quirk_acer_predator_ph315_52 = {
+    .turbo = 1,
+    .cpu_fans = 1,
+    .gpu_fans = 1,
+};
+
 static struct quirk_entry quirk_acer_predator_phn16_71 = {
     .predator_v4 = 1,
     .four_zone_kb = 1,
@@ -788,6 +794,16 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
         },
         .driver_data = &quirk_acer_predator_ph315_53,
     },
+{
+    .callback = dmi_matched,
+    .ident = "Acer Predator PH315-52",
+    .matches = {
+        DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+        DMI_MATCH(DMI_PRODUCT_NAME, "Predator PH315-52"),
+    },
+    .driver_data = &quirk_acer_predator_ph315_52,
+},
+
     {
         .callback = dmi_matched,
         .ident = "Acer Predator PHN16-71",
@@ -2218,12 +2234,16 @@ static int acer_toggle_turbo(void)
 
         /* Set OC to normal */
         if (has_cap(ACER_CAP_TURBO_OC))
-        {
-            WMID_gaming_set_misc_setting(ACER_WMID_MISC_SETTING_OC_1,
-                                         ACER_WMID_OC_NORMAL);
-            WMID_gaming_set_misc_setting(ACER_WMID_MISC_SETTING_OC_2,
-                                         ACER_WMID_OC_NORMAL);
-        }
+{
+    int oc1;
+
+    oc1 = WMID_gaming_set_misc_setting(
+     ACER_WMID_MISC_SETTING_OC_1,
+     ACER_WMID_OC_NORMAL);
+
+     pr_info("TURBO OC RESULT: OC1=%d\n", oc1);
+
+}
     }
     else
     {
@@ -2232,15 +2252,20 @@ static int acer_toggle_turbo(void)
 
         /* Set FAN mode to turbo */
         WMID_gaming_set_fan_mode(0x2);
+        pr_info("FORCED TURBO FAN MODE TEST\n");
 
         /* Set OC to turbo mode */
-        if (has_cap(ACER_CAP_TURBO_OC))
-        {
-            WMID_gaming_set_misc_setting(ACER_WMID_MISC_SETTING_OC_1,
-                                         ACER_WMID_OC_TURBO);
-            WMID_gaming_set_misc_setting(ACER_WMID_MISC_SETTING_OC_2,
-                                         ACER_WMID_OC_TURBO);
-        }
+if (has_cap(ACER_CAP_TURBO_OC))
+{
+    int oc1;
+
+    oc1 = WMID_gaming_set_misc_setting(
+        ACER_WMID_MISC_SETTING_OC_1,
+        ACER_WMID_OC_TURBO);
+    
+    pr_info("TURBO OC ENABLE RESULT: OC1=%d\n", oc1);
+
+}
     }
     return turbo_led_state;
 }
