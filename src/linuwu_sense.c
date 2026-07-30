@@ -4080,6 +4080,8 @@ struct kb_state
 
 static struct kb_state current_kb_state;
 
+static int four_zone_kb_state_save(void);
+
 /* four zone mode */
 static ssize_t four_zoned_rgb_kb_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -4211,6 +4213,9 @@ static ssize_t four_zoned_rgb_kb_store(struct device *dev, struct device_attribu
     /* Set per_zone to 0 */
     current_kb_state.per_zone = 0;
 
+    if (four_zone_kb_state_save() != 0)
+        pr_warn("Failed to persist four-zone keyboard state\n");
+
     return count;
 }
 
@@ -4339,6 +4344,10 @@ static ssize_t per_zoned_rgb_kb_store(struct device *dev, struct device_attribut
         pr_err("Error setting RGB KB status.\n");
         return -ENODEV;
     }
+
+    if (four_zone_kb_state_save() != 0)
+        pr_warn("Failed to persist per-zone keyboard state\n");
+
     return count;
 }
 
@@ -4576,7 +4585,7 @@ static void acer_platform_remove(struct platform_device *device)
         sysfs_remove_group(&device->dev.kobj, &nitro_sense_v4_attr_group);
         acer_predator_state_save();
     }
-    if (quirks->four_zone_kb)
+    if (quirks->four_zone_kb || enable_all)
     {
         sysfs_remove_group(&device->dev.kobj, &four_zoned_kb_attr_group);
         four_zone_kb_state_save();
