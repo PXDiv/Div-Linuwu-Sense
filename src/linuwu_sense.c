@@ -535,6 +535,11 @@ static struct quirk_entry quirk_acer_predator_phn16_71 = {
     .four_zone_kb = 1,
 };
 
+static struct quirk_entry quirk_acer_predator_phn16s_71 = {
+    .predator_v4 = 1,
+    .four_zone_kb = 0,
+};
+
 static struct quirk_entry quirk_acer_predator_phn16_72 = {
     .predator_v4 = 1,
     .four_zone_kb = 1,
@@ -819,6 +824,15 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
             DMI_MATCH(DMI_PRODUCT_NAME, "Predator PHN16-71"),
         },
         .driver_data = &quirk_acer_predator_phn16_71,
+    },
+    {
+        .callback = dmi_matched,
+        .ident = "Acer Predator PHN16S-71",
+        .matches = {
+            DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+            DMI_MATCH(DMI_PRODUCT_NAME, "Predator PHN16S-71"),
+        },
+        .driver_data = &quirk_acer_predator_phn16s_71,
     },
     {
         .callback = dmi_matched,
