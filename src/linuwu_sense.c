@@ -569,6 +569,18 @@ static struct quirk_entry quirk_acer_predator_v4 = {
     .predator_v4 = 1,
 };
 
+/*
+ * Predator Triton 300 SE (PT316-51s) — predator_v4 codepath plus the
+ * four-zoned RGB keyboard. The get-method for four_zone_mode/per_zone_mode
+ * returns an error code on this firmware (sysfs reads fail), but the
+ * set-method works, so users can control the lights from the GUI even
+ * though the current-state read appears broken.
+ */
+static struct quirk_entry quirk_acer_predator_pt316_51s = {
+    .predator_v4 = 1,
+    .four_zone_kb = 1,
+};
+
 /* This AMW0 laptop has no bluetooth */
 static struct quirk_entry quirk_medion_md_98300 = {
     .wireless = 1,
@@ -846,6 +858,25 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
             DMI_MATCH(DMI_PRODUCT_NAME, "Predator PH18-71"),
         },
         .driver_data = &quirk_acer_predator_v4,
+    },
+    {
+        /*
+         * Predator Triton 300 SE — board "Roadster_ADH". Probed on real
+         * hardware: predator_v4 codepath gives all 8 predator_sense attrs
+         * (fan_speed, battery_limiter/calibration, usb_charging,
+         * backlight_timeout, boot_animation_sound, lcd_override, version)
+         * working via WMI. The four-zoned RGB keyboard is also present;
+         * the set-method works but the get-method returns errors on this
+         * firmware, so reads of four_zone_mode / per_zone_mode fail even
+         * though writes (changing the colors) succeed.
+         */
+        .callback = dmi_matched,
+        .ident = "Acer Predator PT316-51s",
+        .matches = {
+            DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+            DMI_MATCH(DMI_PRODUCT_NAME, "Predator PT316-51s"),
+        },
+        .driver_data = &quirk_acer_predator_pt316_51s,
     },
     {
         .callback = set_force_caps,
