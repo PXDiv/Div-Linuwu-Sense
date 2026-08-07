@@ -560,6 +560,10 @@ static struct quirk_entry quirk_acer_nitro_an16_43 = {
     .four_zone_kb = 1,
  };
 
+ static struct quirk_entry quirk_acer_nitro_an515_55 = {
+     .nitro_sense = 1,
+     .four_zone_kb = 1
+ };
 
 static struct quirk_entry quirk_acer_nitro = {
     .nitro_sense = 1,
@@ -640,6 +644,15 @@ static const struct dmi_system_id amw0_whitelist[] __initconst = {
  * that those machines are supported by acer-wmi driver.
  */
 static const struct dmi_system_id acer_quirks[] __initconst = {
+    {
+        .callback = dmi_matched,
+        .ident = "Acer Nitro AN515-55",
+        .matches = {
+            DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+            DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-55"),
+        },
+        .driver_data = &quirk_acer_nitro_an515_55,
+    },
     {
         .callback = dmi_matched,
         .ident = "Acer Nitro AN16-43",
