@@ -831,6 +831,15 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
     },
     {
         .callback = dmi_matched,
+        .ident = "Acer Predator PTN16-51",
+        .matches = {
+            DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+            DMI_MATCH(DMI_PRODUCT_NAME, "Predator PTN16-51"),
+        },
+        .driver_data = &quirk_acer_predator_phn16_71,
+    },
+    {
+        .callback = dmi_matched,
         .ident = "Acer Predator PH16-71",
         .matches = {
             DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
