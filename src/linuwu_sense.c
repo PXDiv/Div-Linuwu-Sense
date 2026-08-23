@@ -26,6 +26,7 @@
 
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/string.h>
 #include <linux/init.h>
 #include <linux/types.h>
 #include <linux/dmi.h>
@@ -488,7 +489,7 @@ static void __init set_quirks(void)
        if (enable_all) {
         quirks->four_zone_kb = 1;  // Enable four-zone keyboard
         interface->capability |= ACER_CAP_PLATFORM_PROFILE |
-                               ACER_CAP_FAN_SPEED_READ | 
+                               ACER_CAP_FAN_SPEED_READ |
                                ACER_CAP_PREDATOR_SENSE |
                                ACER_CAP_NITRO_SENSE |
                                ACER_CAP_NITRO_SENSE_V4 |
@@ -584,7 +585,7 @@ static struct quirk_entry quirk_lenovo_ideapad_s205 = {
 
 static struct quirk_entry quirk_acer_nitro_v4 = {
     .nitro_v4 = 1,
-    
+
 };
 
 static struct quirk_entry quirk_acer_nitro_an517_54 = {
@@ -3602,7 +3603,7 @@ static ssize_t predator_fan_speed_store(struct device *dev,
     char *token;
     char *input_ptr = input;
     size_t len = min(count, sizeof(input) - 1);
-    strncpy(input, buf, len);
+    strscpy(input, buf, len);
 
     if (input[len - 1] == '\n')
     {
@@ -4104,7 +4105,7 @@ static ssize_t four_zoned_rgb_kb_store(struct device *dev, struct device_attribu
     char *input_ptr = input_buf;
     size_t len = min(count, sizeof(input_buf) - 1);
 
-    strncpy(input_buf, buf, len);
+    strscpy(input_buf, buf, len);
 
     if (input_buf[len - 1] == '\n')
     {
@@ -4297,7 +4298,7 @@ static ssize_t per_zoned_rgb_kb_store(struct device *dev, struct device_attribut
     struct per_zone_color colors;
     char *input_ptr = str_buf;
     len = min(count, sizeof(str_buf) - 1);
-    strncpy(str_buf, buf, len);
+    strscpy(str_buf, buf, len);
     if (str_buf[len - 1] == '\n')
     {
         str_buf[len - 1] = '\0';
