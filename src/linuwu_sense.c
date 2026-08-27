@@ -44,6 +44,7 @@
 #include <acpi/video.h>
 #include <linux/hwmon.h>
 #include <linux/fs.h>
+#include <linux/hex.h>
 #include <linux/units.h>
 #include <linux/bitfield.h>
 #include <linux/bitmap.h>
@@ -105,6 +106,8 @@ MODULE_LICENSE("GPL");
 #define ACER_WMID_SET_GAMING_KB_BACKLIGHT_METHODID 20
 #define ACER_WMID_SET_GAMING_RGB_KB_METHODID 6
 #define ACER_WMID_GET_GAMING_RGB_KB_METHODID 7
+#define ACER_WMID_SET_BACK_LOGO_METHODID 12
+#define ACER_WMID_GET_BACK_LOGO_METHODID 13
 
 #define ACER_PREDATOR_V4_FAN_SPEED_READ_BIT_MASK GENMASK(20, 8)
 #define ACER_GAMING_MISC_SETTING_STATUS_MASK GENMASK_ULL(7, 0)
@@ -555,6 +558,11 @@ static struct quirk_entry quirk_acer_nitro_an16_41 = {
     .four_zone_kb = 1,
 };
 
+ static struct quirk_entry quirk_acer_nitro_anv16_41 = {
+    .nitro_v4 = 1,
+    .four_zone_kb = 0,
+ };
+
 static struct quirk_entry quirk_acer_nitro_an16_43 = {
     .nitro_v4 = 1,
     .four_zone_kb = 1,
@@ -590,6 +598,15 @@ static struct quirk_entry quirk_lenovo_ideapad_s205 = {
 static struct quirk_entry quirk_acer_nitro_v4 = {
     .nitro_v4 = 1,
     
+};
+
+static struct quirk_entry quirk_acer_nitro_an517_54 = {
+    .nitro_v4 = 1,
+    .four_zone_kb = 1,
+    .brightness = -1,
+    .cpu_fans = 1,
+    .gpu_fans = 1,
+
 };
 
 /* The Aspire One has a dummy ACPI-WMI interface - disable it */
@@ -654,7 +671,7 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
         },
         .driver_data = &quirk_acer_nitro_an16_41,
     },
-         {
+    {
          .callback = dmi_matched,
          .ident = "Acer Nitro AN515-58",
          .matches = {
@@ -662,7 +679,16 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
              DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-58"),
          },
          .driver_data = &quirk_acer_nitro_an515_58,
-     },
+    },
+    {
+         .callback = dmi_matched,
+         .ident = "Acer Nitro AN515-46",
+         .matches = {
+             DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+             DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-46"),
+         },
+         .driver_data = &quirk_acer_nitro_an515_58,
+    },
     {
         .callback = dmi_matched,
         .ident = "Acer Nitro ANV15-41",
@@ -869,6 +895,15 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
             DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "One S1003"),
         },
         .driver_data = (void *)ACER_CAP_KBD_DOCK,
+    },
+    {
+        .callback = dmi_matched,
+        .ident = "Acer Nitro AN517-54",
+        .matches = {
+            DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+            DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN517-54"),
+        },
+        .driver_data = &quirk_acer_nitro_an517_54,
     },
     {}};
 
@@ -4442,147 +4477,195 @@ static int four_zone_kb_state_load(void)
 static struct device_attribute four_zoned_rgb_mode = __ATTR(four_zone_mode, 0644, four_zoned_rgb_kb_show, four_zoned_rgb_kb_store);
 static struct device_attribute per_zoned_rgb_mode = __ATTR(per_zone_mode, 0644, per_zoned_rgb_kb_show, per_zoned_rgb_kb_store);
 
-/* PHN16-72 back logo/lightbar support imported from Nekro-Sense.
+/* PHN16-72 back logo/lightbar WMI protocol adapted from Nekro-Sense:
+ * https://github.com/nativeanish/nekro-sense
  * Exposes /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/back_logo/color
  * Format: RRGGBB,brightness,enable
  */
-static acpi_status set_logo_status(int enable, int brightness, int effect,
-                                   int red, int green, int blue)
+struct back_logo_state
 {
-    /* Set logo RGB + brightness + enable using Arg1=0x0C (LBLR/LBLG/LBLB/LBLT/LBLF) */
-    {
-        u8 bhgk[6] = { 1 /* select LB set */, (u8)red, (u8)green, (u8)blue, (u8)brightness, (u8)enable };
-        struct acpi_buffer in = { (acpi_size)sizeof(bhgk), (void *)bhgk };
-        acpi_status st = wmi_evaluate_method(WMID_GUID4, 0, 12 /* 0x0C */, &in, NULL);
-        if (ACPI_FAILURE(st))
-            return st;
-    }
+    u8 red;
+    u8 green;
+    u8 blue;
+    u8 brightness;
+    u8 enabled;
+};
 
-    /* Also drive the LBLE gate via unified setter (0x14), which some firmware uses for power */
-    {
-        u8 bhlk[16] = {
-            (u8)enable, /* LBLE */
-            0,           /* LBLS */
-            0,           /* LBBP (ignored for LB) */
-            0,           /* reserved */
-            0,           /* LBED (no change) */
-            0, 0, 0,     /* colors ignored for LB in 0x14 */
-            0,           /* LLES */
-            2,           /* select LB */
-            0, 0, 0, 0, 0, 0
-        };
-        struct acpi_buffer out = { ACPI_ALLOCATE_BUFFER, NULL };
-        struct acpi_buffer in = { (acpi_size)sizeof(bhlk), (void *)(bhlk) };
-        acpi_status st = wmi_evaluate_method(WMID_GUID4, 0, ACER_WMID_SET_GAMING_KB_BACKLIGHT_METHODID, &in, &out);
-        if (ACPI_FAILURE(st))
-            return st;
-        if (out.pointer) kfree(out.pointer);
-    }
+struct back_logo_wmi_output
+{
+    u8 status;
+    u8 red;
+    u8 green;
+    u8 blue;
+    u8 brightness;
+    u8 enabled;
+} __packed;
 
-    return AE_OK;
+static acpi_status set_logo_status(u8 enabled, u8 brightness,
+                                   u8 red, u8 green, u8 blue)
+{
+    u8 color_input[6] = {1, red, green, blue, brightness, enabled};
+    u8 gate_input[16] = {
+        enabled, /* LBLE */
+        0,       /* LBLS */
+        0,       /* LBBP (ignored for LB) */
+        0,       /* reserved */
+        0,       /* LBED (no change) */
+        0, 0, 0, /* colors ignored for LB in the unified setter */
+        0,       /* LLES */
+        2,       /* select LB */
+        0, 0, 0, 0, 0, 0
+    };
+    struct acpi_buffer color_buffer = {
+        (acpi_size)sizeof(color_input), (void *)color_input
+    };
+    struct acpi_buffer gate_buffer = {
+        (acpi_size)sizeof(gate_input), (void *)gate_input
+    };
+    struct acpi_buffer output = {ACPI_ALLOCATE_BUFFER, NULL};
+    acpi_status status;
+
+    /* Set LBLR/LBLG/LBLB/LBLT/LBLF using the dedicated logo method. */
+    status = wmi_evaluate_method(WMID_GUID4, 0,
+                                 ACER_WMID_SET_BACK_LOGO_METHODID,
+                                 &color_buffer, NULL);
+    if (ACPI_FAILURE(status))
+        return status;
+
+    /* Drive the LBLE gate through the unified backlight setter as well. */
+    status = wmi_evaluate_method(WMID_GUID4, 0,
+                                 ACER_WMID_SET_GAMING_KB_BACKLIGHT_METHODID,
+                                 &gate_buffer, &output);
+    kfree(output.pointer);
+
+    return status;
 }
 
-static acpi_status get_logo_status(struct get_four_zoned_kb_output *out)
+static acpi_status get_logo_status(struct back_logo_state *state)
 {
-    /* Prefer dedicated logo color getter (Arg1=0x0D) for RGB, combine with 0x15 for brightness/enable */
-    u8 req = 1; /* select LB color read */
-    struct {
-        u8 status;
-        u8 r,g,b,t,f;
-    } __packed col = {0};
-    struct acpi_buffer out_col = { ACPI_ALLOCATE_BUFFER, NULL };
-    struct acpi_buffer in_col = { (acpi_size)sizeof(req), (void *)&req };
+    u8 selector = 1;
+    u64 unified_selector = 2;
+    struct acpi_buffer color_output = {ACPI_ALLOCATE_BUFFER, NULL};
+    struct acpi_buffer color_input = {
+        (acpi_size)sizeof(selector), (void *)&selector
+    };
+    struct acpi_buffer unified_output = {ACPI_ALLOCATE_BUFFER, NULL};
+    struct acpi_buffer unified_input = {
+        (acpi_size)sizeof(unified_selector), (void *)&unified_selector
+    };
+    struct back_logo_wmi_output *logo_output;
+    struct get_four_zoned_kb_output *unified_state;
     union acpi_object *obj;
+    acpi_status status;
 
-    /* Get color via method id 13 (0x0D) */
-    if (ACPI_FAILURE(wmi_evaluate_method(WMID_GUID4, 0, 13, &in_col, &out_col)))
-        goto fallback_unified;
-    obj = out_col.pointer;
-    if (!obj || obj->type != ACPI_TYPE_BUFFER || obj->buffer.length < 6) {
-        kfree(obj);
-        goto fallback_unified;
-    }
-    /* At least 6 bytes guaranteed by check above */
-    memcpy(&col, obj->buffer.pointer, 6);
-    kfree(obj);
-
-    /* Populate outputs using 0x0D data for RGB, brightness and enable. Other fields set to 0. */
-    out->gmReturn = 0;
-    out->gmOutput[0] = col.f; /* enable */
-    out->gmOutput[1] = 0;     /* speed (not used for LB) */
-    out->gmOutput[2] = col.t; /* brightness */
-    out->gmOutput[3] = 0;
-    out->gmOutput[4] = 0;     /* effect not reported here */
-    out->gmOutput[5] = col.r;
-    out->gmOutput[6] = col.g;
-    out->gmOutput[7] = col.b;
-    return AE_OK;
-
-fallback_unified:
-    {
-        u64 sel = 2;
-        struct acpi_buffer out_gkb = { ACPI_ALLOCATE_BUFFER, NULL };
-        struct acpi_buffer in_gkb = { (acpi_size) sizeof(u64), (void *)(&sel) };
-        if (ACPI_FAILURE(wmi_evaluate_method(WMID_GUID4, 0, ACER_WMID_GET_GAMING_KB_BACKLIGHT_METHODID, &in_gkb, &out_gkb)))
-            return AE_ERROR;
-        obj = out_gkb.pointer;
-        if (!obj || obj->type != ACPI_TYPE_BUFFER || obj->buffer.length != 16) {
-            kfree(obj);
-            return AE_ERROR;
-        }
-        *out = *((struct get_four_zoned_kb_output  *)obj->buffer.pointer);
+    status = wmi_evaluate_method(WMID_GUID4, 0,
+                                 ACER_WMID_GET_BACK_LOGO_METHODID,
+                                 &color_input, &color_output);
+    obj = color_output.pointer;
+    if (ACPI_SUCCESS(status) && obj && obj->type == ACPI_TYPE_BUFFER &&
+        obj->buffer.length >= sizeof(*logo_output)) {
+        logo_output = (struct back_logo_wmi_output *)obj->buffer.pointer;
+        state->red = logo_output->red;
+        state->green = logo_output->green;
+        state->blue = logo_output->blue;
+        state->brightness = logo_output->brightness;
+        state->enabled = logo_output->enabled;
         kfree(obj);
         return AE_OK;
     }
+    kfree(obj);
+
+    /* Fall back to the unified getter if the dedicated getter is absent. */
+    status = wmi_evaluate_method(WMID_GUID4, 0,
+                                 ACER_WMID_GET_GAMING_KB_BACKLIGHT_METHODID,
+                                 &unified_input, &unified_output);
+    obj = unified_output.pointer;
+    if (ACPI_FAILURE(status)) {
+        kfree(obj);
+        return status;
+    }
+    if (!obj || obj->type != ACPI_TYPE_BUFFER ||
+        obj->buffer.length != sizeof(*unified_state)) {
+        kfree(obj);
+        return AE_ERROR;
+    }
+
+    unified_state = (struct get_four_zoned_kb_output *)obj->buffer.pointer;
+    state->red = unified_state->gmOutput[5];
+    state->green = unified_state->gmOutput[6];
+    state->blue = unified_state->gmOutput[7];
+    state->brightness = unified_state->gmOutput[2];
+    state->enabled = unified_state->gmOutput[0];
+    kfree(obj);
+
+    return AE_OK;
 }
 
 /* Back logo/lightbar sysfs: expose a simple color+brightness control */
 static ssize_t back_logo_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-    struct get_four_zoned_kb_output out;
-    acpi_status status = get_logo_status(&out);
+    struct back_logo_state state;
+    acpi_status status = get_logo_status(&state);
+
     if (ACPI_FAILURE(status))
         return -ENODEV;
-    /* gmOutput indices: [5]=R, [6]=G, [7]=B, [2]=brightness, [0]=enable */
-    return sprintf(buf, "%02x%02x%02x,%d,%d\n",
-                   out.gmOutput[5], out.gmOutput[6], out.gmOutput[7],
-                   out.gmOutput[2], out.gmOutput[0]);
+
+    return sysfs_emit(buf, "%02x%02x%02x,%u,%u\n",
+                      state.red, state.green, state.blue,
+                      state.brightness, state.enabled);
 }
 
-static ssize_t back_logo_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+static ssize_t back_logo_store(struct device *dev,
+                               struct device_attribute *attr,
+                               const char *buf, size_t count)
 {
     /* Accept: RRGGBB,brightness[,enable] */
     char tmp[40];
-    size_t len = min(count, sizeof(tmp) - 1);
     int brightness = -1, enable = -1;
-    unsigned int r = 0, g = 0, b = 0;
-    char *p, *tok;
+    u8 rgb[3];
+    char *p;
+    char *color;
+    char *brightness_value;
+    char *enable_value;
     acpi_status status;
 
-    strncpy(tmp, buf, len);
-    if (tmp[len-1] == '\n')
-        tmp[len-1] = '\0';
+    if (!count || count >= sizeof(tmp))
+        return -E2BIG;
+
+    memcpy(tmp, buf, count);
+    if (tmp[count - 1] == '\n')
+        tmp[count - 1] = '\0';
     else
-        tmp[len] = '\0';
+        tmp[count] = '\0';
 
     p = tmp;
-    tok = strsep(&p, ",");
-    if (!tok || strlen(tok) != 6 ||
-        sscanf(tok, "%02x%02x%02x", &r, &g, &b) != 3) {
+    color = strsep(&p, ",");
+    brightness_value = strsep(&p, ",");
+    enable_value = strsep(&p, ",");
+
+    if (!color || strlen(color) != 6 || hex2bin(rgb, color, 3)) {
         pr_err("Invalid color, expected RRGGBB\n");
         return -EINVAL;
     }
-    tok = strsep(&p, ",");
-    if (!tok || kstrtoint(tok, 10, &brightness) || brightness < 0 || brightness > 100) {
+
+    if (!brightness_value ||
+        kstrtoint(brightness_value, 10, &brightness) ||
+        brightness < 0 || brightness > 100) {
         pr_err("Invalid brightness 0-100\n");
         return -EINVAL;
     }
-    if (p && *p) {
-        tok = strsep(&p, ",");
-        if (!tok || kstrtoint(tok, 10, &enable) || (enable != 0 && enable != 1)) {
+
+    if (enable_value) {
+        if (kstrtoint(enable_value, 10, &enable) ||
+            (enable != 0 && enable != 1)) {
             pr_err("Invalid enable (0/1)\n");
             return -EINVAL;
         }
+    }
+
+    if (p) {
+        pr_err("Too many back logo parameters\n");
+        return -EINVAL;
     }
 
     if (enable < 0)
@@ -4592,18 +4675,20 @@ static ssize_t back_logo_store(struct device *dev, struct device_attribute *attr
     if (enable == 0)
         brightness = 0;
 
-    /* effect 0 = static */
-    status = set_logo_status(enable, brightness, 0, (int)r, (int)g, (int)b);
+    status = set_logo_status((u8)enable, (u8)brightness,
+                             rgb[0], rgb[1], rgb[2]);
     if (ACPI_FAILURE(status))
         return -ENODEV;
     return count;
 }
 
-static struct device_attribute back_logo_attr = __ATTR(color, 0644, back_logo_show, back_logo_store);
+static struct device_attribute back_logo_attr =
+    __ATTR(color, 0644, back_logo_show, back_logo_store);
 static struct attribute *back_logo_attrs[] = {
     &back_logo_attr.attr,
     NULL
 };
+
 static const struct attribute_group back_logo_attr_group = {
     .name = "back_logo",
     .attrs = back_logo_attrs,
@@ -4685,12 +4770,11 @@ static int acer_platform_probe(struct platform_device *device)
         four_zone_kb_state_load();
      }
 
-
-		if (has_cap(ACER_CAP_BACK_LOGO)) {
-			err = sysfs_create_group(&device->dev.kobj, &back_logo_attr_group);
-			if (err)
-				pr_warn("Failed to create back_logo sysfs group: %d\n", err);
-		}
+    if (has_cap(ACER_CAP_BACK_LOGO)) {
+        err = sysfs_create_group(&device->dev.kobj, &back_logo_attr_group);
+        if (err)
+            pr_warn("Failed to create back_logo sysfs group: %d\n", err);
+    }
 
     return 0;
 
@@ -4729,13 +4813,12 @@ static void acer_platform_remove(struct platform_device *device)
         sysfs_remove_group(&device->dev.kobj, &nitro_sense_v4_attr_group);
         acer_predator_state_save();
     }
+    if (has_cap(ACER_CAP_BACK_LOGO))
+        sysfs_remove_group(&device->dev.kobj, &back_logo_attr_group);
+
     if (quirks->four_zone_kb)
     {
         sysfs_remove_group(&device->dev.kobj, &four_zoned_kb_attr_group);
-
-
-	if (has_cap(ACER_CAP_BACK_LOGO))
-		sysfs_remove_group(&device->dev.kobj, &back_logo_attr_group);
         four_zone_kb_state_save();
     }
 

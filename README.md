@@ -251,19 +251,27 @@ The `four_zone_mode` controls advanced RGB effects for your keyboard, requiring 
     - `0`: Blue (black for Neon)
  
 The thermal and fan profiles will be saved and loaded on each reboot, ensuring that the settings remain persistent across restarts.
+
+### Back Logo / Lightbar (PHN16-72)
+
+Supported PHN16-72 systems expose the rear logo/lightbar control at:
+
+`/sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/back_logo/color`
+
+The value format is `RRGGBB,brightness,enable`, where brightness is `0-100`
+and enable is `0` or `1`. If enable is omitted, a non-zero brightness enables
+the lightbar.
+
+Set the color to cyan at full brightness:
+
+`echo 00ffcc,100,1 | sudo tee /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/back_logo/color`
+
+Read the current state:
+
+`cat /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/back_logo/color`
+
 ## GUI:
 - [Div Acer Manager Max By PXDiv](https://github.com/PXDiv/Div-Acer-Manager-Max)
-- [GUI LinuwuSense By KumarVivek](https://github.com/kumarvivek1752/Linuwu-Sense-GUI/tree/main)
-
-## 🚧 Roadmap:
-- [x] GUI for keyboard rgb controls to make it noob friendly.
-- [x] Module Persistence After Reboot.
-- [ ] Custom Boot Logo Feature Support.
-- [ ] More device support currently only ( PHN16-71 ) is fully supported.
 
 ## License
 GNU General Public License v3
-
-### 💖 Donations
-Donations are completely optional but show your love for open-source development and motivate me to add more features to this project!
-USDT (BEP20 - BNB Smart Chain): 0xDA7aa42B9Fc3041F20f4Ec828A70E9bDD54A6822
