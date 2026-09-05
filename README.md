@@ -30,6 +30,30 @@ make uninstall
 > ## Use at your own risk! This driver is independently developed through reverse engineering the official PredatorSense app, without any involvement from Acer. It interacts with low-level WMI methods, which may not be tested across all models.
 
 ## 🛠️ Usage
+
+### Predator PT315-53
+
+This model is detected natively without module parameters. Its firmware's
+SSDT12 shows that every gaming system-info method 5 call sets EC.PSEE before
+returning data. Sensor discovery and individual reads before RGB was properly
+configured were observed to turn off the keyboard backlight.
+
+PT315-53 RGB application stages zone colours, selects static mode with KLES=0,
+then enables PSEE and the four zones. White lighting, DAMX zone-colour changes,
+and the Turbo button have been confirmed on hardware with this sequence.
+AC/battery detection uses Linux's power-supply subsystem, avoiding method 5
+during profile changes and state saving or restoration.
+
+Telemetry uses the firmware-confirmed `0x227` sensor mask without
+running discovery. Temperature and RPM reads are allowed only after successful
+RGB initialization and are serialized with colour changes. Until then, reads
+return `ENODATA`; this does not mean the fans are stopped. After suspend,
+reapply the RGB settings to enable telemetry again. CPU and GPU readings of
+2362 and 2343 RPM, continued keyboard lighting, and DAMX operation were
+confirmed with the RGB guard. Cold-boot persistence and suspend/resume remain
+to be validated. See
+[firmware findings](docs/PT315-53-firmware.md).
+
 # Example Usage and Configuration
 
 Thermal profiles can be easily switched with a single click! 😎 For battery mode, you can choose between Eco and Balanced, while when plugged into AC, you have the options for Quiet, Balanced, Performance, and Turbo. ⚡💻 Each profile will be different for battery and AC, and the thermal and fan settings will automatically adjust based on your current power source. Customize it to fit your preferences! 🌟
@@ -256,4 +280,3 @@ The thermal and fan profiles will be saved and loaded on each reboot, ensuring t
 
 ## License
 GNU General Public License v3
-
