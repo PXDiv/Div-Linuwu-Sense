@@ -545,6 +545,11 @@ static struct quirk_entry quirk_acer_nitro_an16_41 = {
     .four_zone_kb = 1,
 };
 
+ static struct quirk_entry quirk_acer_nitro_anv16_41 = {
+    .nitro_v4 = 1,
+    .four_zone_kb = 0,
+ };
+
 static struct quirk_entry quirk_acer_nitro_an16_43 = {
     .nitro_v4 = 1,
     .four_zone_kb = 1,
@@ -580,6 +585,15 @@ static struct quirk_entry quirk_lenovo_ideapad_s205 = {
 static struct quirk_entry quirk_acer_nitro_v4 = {
     .nitro_v4 = 1,
     
+};
+
+static struct quirk_entry quirk_acer_nitro_an517_54 = {
+    .nitro_v4 = 1,
+    .four_zone_kb = 1,
+    .brightness = -1,
+    .cpu_fans = 1,
+    .gpu_fans = 1,
+
 };
 
 /* The Aspire One has a dummy ACPI-WMI interface - disable it */
@@ -644,7 +658,7 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
         },
         .driver_data = &quirk_acer_nitro_an16_41,
     },
-         {
+    {
          .callback = dmi_matched,
          .ident = "Acer Nitro AN515-58",
          .matches = {
@@ -652,7 +666,16 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
              DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-58"),
          },
          .driver_data = &quirk_acer_nitro_an515_58,
-     },
+    },
+    {
+         .callback = dmi_matched,
+         .ident = "Acer Nitro AN515-46",
+         .matches = {
+             DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+             DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-46"),
+         },
+         .driver_data = &quirk_acer_nitro_an515_58,
+    },
     {
         .callback = dmi_matched,
         .ident = "Acer Nitro ANV15-41",
@@ -868,6 +891,15 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
             DMI_EXACT_MATCH(DMI_PRODUCT_NAME, "One S1003"),
         },
         .driver_data = (void *)ACER_CAP_KBD_DOCK,
+    },
+    {
+        .callback = dmi_matched,
+        .ident = "Acer Nitro AN517-54",
+        .matches = {
+            DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+            DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN517-54"),
+        },
+        .driver_data = &quirk_acer_nitro_an517_54,
     },
     {}};
 
