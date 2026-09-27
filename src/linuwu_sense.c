@@ -587,6 +587,11 @@ static struct quirk_entry quirk_acer_nitro_v4 = {
     
 };
 
+static struct quirk_entry quirk_acer_nitro_anv16s_71 = {
+    .nitro_v4 = 1,
+    .four_zone_kb = 1,
+};
+
 static struct quirk_entry quirk_acer_nitro_an517_54 = {
     .nitro_v4 = 1,
     .four_zone_kb = 1,
@@ -648,6 +653,15 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
             DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN16-43"),
         },
         .driver_data = &quirk_acer_nitro_an16_43,
+    },
+    {
+        .callback = dmi_matched,
+        .ident = "Acer Nitro ANV16S-71",
+        .matches = {
+            DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+            DMI_MATCH(DMI_PRODUCT_NAME, "Nitro ANV16S-71"),
+        },
+        .driver_data = &quirk_acer_nitro_anv16s_71,
     },
     {
         .callback = dmi_matched,
