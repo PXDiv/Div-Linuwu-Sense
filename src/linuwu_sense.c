@@ -459,6 +459,7 @@ struct quirk_entry
     u8 nitro_v4;
     u8 nitro_sense;
     u8 four_zone_kb;
+    u8 four_zone_static; /* Zone activation and static engine on PHN16-72 */
 };
 
 static struct quirk_entry *quirks;
@@ -538,6 +539,7 @@ static struct quirk_entry quirk_acer_predator_phn16_71 = {
 static struct quirk_entry quirk_acer_predator_phn16_72 = {
     .predator_v4 = 1,
     .four_zone_kb = 1,
+    .four_zone_static = 1,
 };
 
 static struct quirk_entry quirk_acer_nitro_an16_41 = {
@@ -3602,7 +3604,10 @@ static ssize_t predator_fan_speed_store(struct device *dev,
     char *token;
     char *input_ptr = input;
     size_t len = min(count, sizeof(input) - 1);
-    strncpy(input, buf, len);
+    if (!len)
+        return -EINVAL;
+    memcpy(input, buf, len);
+    input[len] = '\0';
 
     if (input[len - 1] == '\n')
     {
@@ -3983,6 +3988,9 @@ struct get_four_zoned_kb_output
 } __packed;
 
 static acpi_status set_kb_status(int mode, int speed, int brightness,
+                               int direction, int red, int green, int blue);
+
+static acpi_status set_kb_effect(int mode, int speed, int brightness,
                                  int direction, int red, int green, int blue)
 {
     u64 resp = 0;
@@ -3992,6 +4000,9 @@ static acpi_status set_kb_status(int mode, int speed, int brightness,
     union acpi_object *obj;
     struct acpi_buffer output = {ACPI_ALLOCATE_BUFFER, NULL};
     struct acpi_buffer input = {(acpi_size)sizeof(gmInput), (void *)(gmInput)};
+
+    if (mode == 0 && quirks->four_zone_static)
+        gmInput[8] = 0; /* Static zone engine; animated effects use engine 3. */
 
     status = wmi_evaluate_method(WMID_GUID4, 0, ACER_WMID_SET_GAMING_KB_BACKLIGHT_METHODID, &input, &output);
     if (ACPI_FAILURE(status))
@@ -4041,9 +4052,7 @@ static acpi_status get_kb_status(struct get_four_zoned_kb_output *out)
 
     if (!obj || obj->type != ACPI_TYPE_BUFFER || obj->buffer.length != 16)
     {
-        pr_err("Unexpected output format getting kb zone status, buffer "
-               "length:%d\n",
-               obj->buffer.length);
+        pr_err("Unexpected output format getting kb zone status\n");
         goto failed;
     }
 
@@ -4104,7 +4113,10 @@ static ssize_t four_zoned_rgb_kb_store(struct device *dev, struct device_attribu
     char *input_ptr = input_buf;
     size_t len = min(count, sizeof(input_buf) - 1);
 
-    strncpy(input_buf, buf, len);
+    if (!len)
+        return -EINVAL;
+    memcpy(input_buf, buf, len);
+    input_buf[len] = '\0';
 
     if (input_buf[len - 1] == '\n')
     {
@@ -4208,8 +4220,8 @@ static ssize_t four_zoned_rgb_kb_store(struct device *dev, struct device_attribu
         return -ENODEV;
     }
 
-    /* Set per_zone to 0 */
-    current_kb_state.per_zone = 0;
+    /* PHN16-72 Static stores its color in the four zone registers. */
+    current_kb_state.per_zone = mode == 0 && quirks->four_zone_static;
 
     return count;
 }
@@ -4251,29 +4263,83 @@ static acpi_status set_per_zone_color(struct per_zone_color *input)
     acpi_status status;
     u64 *zones[] = {&input->zone1, &input->zone2, &input->zone3, &input->zone4};
     u8 zone_ids[] = {0x1, 0x2, 0x4, 0x8};
+    u64 result;
 
-    status = set_kb_status(0, 0, input->brightness, 0, 0, 0, 0);
-    if (ACPI_FAILURE(status))
+    if (quirks->four_zone_static)
     {
-        pr_err("Error setting KB status.\n");
-        return -ENODEV;
+        /* PHN16-72 requires this scalar preamble before zone colors.
+         * Protocol also implemented by ASense's asense_write_zones():
+         * https://github.com/fladirm/asense/blob/main/kernel/asense_rgb.c
+         * Method 5 polls the controller; method 2 enables zones 1..4.
+         */
+        status = WMI_gaming_execute_u64(ACER_WMID_GET_GAMING_SYS_INFO_METHODID, 0, &result);
+        if (ACPI_FAILURE(status))
+            return status;
+        status = WMI_gaming_execute_u64(ACER_WMID_SET_GAMING_LED_METHODID,
+                                       0x00000f0000000008ULL, &result);
+        if (ACPI_FAILURE(status))
+            return status;
+        if (result != 0)
+            return AE_ERROR;
+    }
+    else
+    {
+        status = set_kb_effect(0, 0, input->brightness, 0, 0, 0, 0);
+        if (ACPI_FAILURE(status))
+            return status;
     }
 
     for (int i = 0; i < 4; i++)
     {
-        *zones[i] = (cpu_to_be64(*zones[i]) >> 32) | zone_ids[i];
-        status = WMI_gaming_execute_u64(ACER_WMID_SET_GAMING_RGB_KB_METHODID, *zones[i], NULL);
+        u64 value = (cpu_to_be64(*zones[i]) >> 32) | zone_ids[i];
+
+        status = WMI_gaming_execute_u64(ACER_WMID_SET_GAMING_RGB_KB_METHODID, value, &result);
         if (ACPI_FAILURE(status))
         {
             pr_err("Error setting KB color (zone %d): %s\n", i + 1, acpi_format_exception(status));
             return status;
         }
+        if (quirks->four_zone_static && result != 0)
+            return AE_ERROR;
+    }
+
+    if (quirks->four_zone_static)
+    {
+        struct get_four_zoned_kb_output actual;
+
+        /* Commit only after all zones are written, using engine 0. */
+        status = set_kb_effect(0, 0, input->brightness, 0, 0, 0, 0);
+        if (ACPI_FAILURE(status))
+            return status;
+        status = get_kb_status(&actual);
+        if (ACPI_FAILURE(status))
+            return status;
+        if (actual.gmReturn != 0 || actual.gmOutput[0] != 0 ||
+            actual.gmOutput[2] != input->brightness || actual.gmOutput[8] != 0)
+            return AE_ERROR;
     }
     /* set per_zone to 1*/
 
     current_kb_state.per_zone = 1;
 
     return status;
+}
+
+static acpi_status set_kb_status(int mode, int speed, int brightness,
+                               int direction, int red, int green, int blue)
+{
+    if (mode == 0 && quirks->four_zone_static)
+    {
+        u64 color = ((u64)red << 16) | ((u64)green << 8) | blue;
+        struct per_zone_color zones = {
+            .zone1 = color, .zone2 = color, .zone3 = color, .zone4 = color,
+            .brightness = brightness,
+        };
+
+        return set_per_zone_color(&zones);
+    }
+
+    return set_kb_effect(mode, speed, brightness, direction, red, green, blue);
 }
 
 static ssize_t per_zoned_rgb_kb_show(struct device *dev, struct device_attribute *attr, char *buf)
@@ -4297,7 +4363,10 @@ static ssize_t per_zoned_rgb_kb_store(struct device *dev, struct device_attribut
     struct per_zone_color colors;
     char *input_ptr = str_buf;
     len = min(count, sizeof(str_buf) - 1);
-    strncpy(str_buf, buf, len);
+    if (!len)
+        return -EINVAL;
+    memcpy(str_buf, buf, len);
+    str_buf[len] = '\0';
     if (str_buf[len - 1] == '\n')
     {
         str_buf[len - 1] = '\0';
