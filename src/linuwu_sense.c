@@ -28,6 +28,7 @@
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/types.h>
+#include <linux/string.h>
 #include <linux/dmi.h>
 #include <linux/backlight.h>
 #include <linux/leds.h>
@@ -3602,9 +3603,9 @@ static ssize_t predator_fan_speed_store(struct device *dev,
     char *token;
     char *input_ptr = input;
     size_t len = min(count, sizeof(input) - 1);
-    strncpy(input, buf, len);
+    memcpy(input, buf, len);
 
-    if (input[len - 1] == '\n')
+    if (len > 0 && input[len - 1] == '\n')
     {
         input[len - 1] = '\0';
     }
@@ -4104,9 +4105,9 @@ static ssize_t four_zoned_rgb_kb_store(struct device *dev, struct device_attribu
     char *input_ptr = input_buf;
     size_t len = min(count, sizeof(input_buf) - 1);
 
-    strncpy(input_buf, buf, len);
+    memcpy(input_buf, buf, len);
 
-    if (input_buf[len - 1] == '\n')
+    if (len > 0 && input_buf[len - 1] == '\n')
     {
         input_buf[len - 1] = '\0';
     }
@@ -4297,8 +4298,8 @@ static ssize_t per_zoned_rgb_kb_store(struct device *dev, struct device_attribut
     struct per_zone_color colors;
     char *input_ptr = str_buf;
     len = min(count, sizeof(str_buf) - 1);
-    strncpy(str_buf, buf, len);
-    if (str_buf[len - 1] == '\n')
+    memcpy(str_buf, buf, len);
+    if (len > 0 && str_buf[len - 1] == '\n')
     {
         str_buf[len - 1] = '\0';
     }
