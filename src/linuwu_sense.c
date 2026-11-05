@@ -56,6 +56,15 @@
 #include <asm/unaligned.h>
 #endif
 
+/*
+ * The platform_profile API was reworked in 6.13: the handler based interface
+ * (struct platform_profile_handler + platform_profile_register()) was replaced
+ * by devm_platform_profile_register() with struct platform_profile_ops.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,13,0)
+#define ACER_HAVE_PLATFORM_PROFILE_OPS 1
+#endif
+
 MODULE_AUTHOR("Carlos Corbacho, E.M. Smith, 0x7375646F (Linuwu-Sense), modified by Div Sharp (DAMX)");
 MODULE_DESCRIPTION("Modern Acer Laptop WMI Driver");
 MODULE_LICENSE("GPL");
@@ -981,7 +990,9 @@ static const struct dmi_system_id non_acer_quirks[] __initconst = {
     },
     {}};
 
+#ifdef ACER_HAVE_PLATFORM_PROFILE_OPS
 static struct device *platform_profile_device;
+#endif
 static bool platform_profile_support;
 
 /*
@@ -2496,6 +2507,63 @@ static acpi_status acer_predator_state_restore(int value);
 
 static acpi_status battery_health_set(u8 function, u8 function_status);
 
+#ifndef ACER_HAVE_PLATFORM_PROFILE_OPS
+/*
+ * Kernel < 6.13: the callbacks receive the handler instead of a device.
+ * The device argument is unused by both implementations, so wrap them.
+ */
+static int
+acer_predator_v4_platform_profile_get_old(struct platform_profile_handler *pprof,
+                                           enum platform_profile_option *profile)
+{
+    return acer_predator_v4_platform_profile_get(NULL, profile);
+}
+
+static int
+acer_predator_v4_platform_profile_set_old(struct platform_profile_handler *pprof,
+                                           enum platform_profile_option profile)
+{
+    return acer_predator_v4_platform_profile_set(NULL, profile);
+}
+
+static struct platform_profile_handler acer_predator_v4_platform_profile_handler = {
+    .profile_get = acer_predator_v4_platform_profile_get_old,
+    .profile_set = acer_predator_v4_platform_profile_set_old,
+};
+
+static int acer_platform_profile_setup(struct platform_device *device)
+{
+    int err;
+
+    if (!(quirks->predator_v4 || quirks->nitro_sense || quirks->nitro_v4 || enable_all))
+        return 0;
+
+    pr_info("Setting up platform profile for gaming laptop\n");
+
+    /* The handler has to advertise its supported profiles before registering */
+    err = acer_predator_v4_platform_profile_probe(NULL,
+                                                 acer_predator_v4_platform_profile_handler.choices);
+    if (err)
+    {
+        pr_warn("Failed to probe platform profiles, error: %d\n", err);
+        platform_profile_support = false;
+        return 0;
+    }
+
+    err = platform_profile_register(&acer_predator_v4_platform_profile_handler);
+    if (err)
+    {
+        pr_warn("Failed to register platform profile, error: %d\n", err);
+        platform_profile_support = false;
+        return 0;
+    }
+
+    platform_profile_support = true;
+    pr_info("Platform profile registered successfully\n");
+
+    return 0;
+}
+#else
 static const struct platform_profile_ops acer_predator_v4_platform_profile_ops = {
     .probe = acer_predator_v4_platform_profile_probe,
     .profile_get = acer_predator_v4_platform_profile_get,
@@ -2565,6 +2633,7 @@ static int acer_platform_profile_setup(struct platform_device *device)
 
     return 0;
 }
+#endif /* ACER_HAVE_PLATFORM_PROFILE_OPS */
 
 static int acer_thermal_profile_change(void)
 {
@@ -2648,7 +2717,11 @@ static int acer_thermal_profile_change(void)
         if (tp != acer_predator_v4_max_perf)
             last_non_turbo_profile = tp;
 
+#ifdef ACER_HAVE_PLATFORM_PROFILE_OPS
         platform_profile_notify(platform_profile_device);
+#else
+        platform_profile_notify();
+#endif
     }
 
     return 0;
@@ -4595,6 +4668,12 @@ static void acer_platform_remove(struct platform_device *device)
         sysfs_remove_group(&device->dev.kobj, &four_zoned_kb_attr_group);
         four_zone_kb_state_save();
     }
+
+#ifndef ACER_HAVE_PLATFORM_PROFILE_OPS
+    /* The device managed API unregisters itself on kernel >= 6.13 */
+    if (platform_profile_support)
+        platform_profile_remove();
+#endif
 
     acer_rfkill_exit();
 }
