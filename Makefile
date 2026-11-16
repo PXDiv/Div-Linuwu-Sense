@@ -75,9 +75,13 @@ install: all
 				grep -qxF "$$entry" $$conf_file || echo "$$entry" | sudo tee -a $$conf_file > /dev/null; \
 			done; \
 		fi; \
+		logo_path="/sys/module/$(MODNAME)/drivers/platform:acer-wmi/acer-wmi/back_logo/color"; \
+		if [ -f "$$logo_path" ]; then \
+			entry="f $$logo_path 0660 root $(MODNAME)"; \
+			grep -qxF "$$entry" $$conf_file || echo "$$entry" | sudo tee -a $$conf_file > /dev/null; \
+		fi; \
 		sudo systemd-tmpfiles --create $$conf_file; \
 	else \
 		echo "Warning: Could not detect predator_sense or nitro_sense in sysfs."; \
 	fi
 	@echo "Module $(MODNAME) installed and configured to load at boot."
-
