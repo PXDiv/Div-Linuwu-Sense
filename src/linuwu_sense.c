@@ -464,6 +464,8 @@ struct quirk_entry
     u8 nitro_sense;
     u8 four_zone_kb;
     u8 back_logo; /* back lid logo/lightbar present */
+    u8 kb_zone_arm; /* the keyboard zones must be switched on at probe */
+    u8 win_key_lock; /* NitroSense Windows and menu key setting */
 };
 
 static struct quirk_entry *quirks;
@@ -566,6 +568,13 @@ static struct quirk_entry quirk_acer_nitro_an16_41 = {
 static struct quirk_entry quirk_acer_nitro_an16_43 = {
     .nitro_v4 = 1,
     .four_zone_kb = 1,
+};
+
+static struct quirk_entry quirk_acer_nitro_an515_57 = {
+    .nitro_v4 = 1,
+    .four_zone_kb = 1,
+    .kb_zone_arm = 1,
+    .win_key_lock = 1,
 };
 
  static struct quirk_entry quirk_acer_nitro_an515_58 = {
@@ -688,6 +697,15 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
              DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-46"),
          },
          .driver_data = &quirk_acer_nitro_an515_58,
+    },
+    {
+        .callback = dmi_matched,
+        .ident = "Acer Nitro AN515-57",
+        .matches = {
+            DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+            DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-57"),
+        },
+        .driver_data = &quirk_acer_nitro_an515_57,
     },
     {
         .callback = dmi_matched,
@@ -3987,6 +4005,65 @@ static struct attribute *nitro_sense_attrs[] = {
 static struct attribute_group nitro_sense_attr_group = {
     .name = "nitro_sense", .attrs = nitro_sense_attrs};
 
+/*
+ * WINDOWS KEY LOCK, 1 disables the Windows and menu keys
+ */
+static ssize_t nitro_win_key_lock_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+    acpi_status status;
+    u64 result;
+    status = WMI_gaming_execute_u64(ACER_WMID_GET_GAMING_PROFILE_METHODID, 0x00, &result);
+    if (ACPI_FAILURE(status) || (result & 0xff))
+    {
+        pr_err("Error getting win_key_lock status\n");
+        return -ENODEV;
+    }
+    /* byte 3 is 1 while the keys work */
+    return sprintf(buf, "%d\n", ((result >> 24) & 0xff) ? 0 : 1);
+}
+
+static ssize_t nitro_win_key_lock_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    acpi_status status;
+    u64 result;
+    u8 val;
+    if (sscanf(buf, "%hhd", &val) != 1)
+        return -EINVAL;
+    if ((val != 0) && (val != 1))
+        return -EINVAL;
+    status = WMI_gaming_execute_u64(ACER_WMID_SET_GAMING_PROFILE_METHODID, 0x02 | ((u64)!val << 24), &result);
+    if (ACPI_FAILURE(status) || (result & 0xff))
+    {
+        pr_err("Error setting win_key_lock status\n");
+        return -ENODEV;
+    }
+    return count;
+}
+
+static struct device_attribute win_key_lock = __ATTR(win_key_lock, 0644, nitro_win_key_lock_show, nitro_win_key_lock_store);
+static struct attribute *win_key_lock_attrs[] = {
+    &win_key_lock.attr,
+    NULL
+};
+
+/* Hide win_key_lock if the firmware does not answer for it */
+static umode_t win_key_lock_attr_is_visible(struct kobject *kobj, struct attribute *attr, int n)
+{
+    acpi_status status;
+    u64 result;
+
+    status = WMI_gaming_execute_u64(ACER_WMID_GET_GAMING_PROFILE_METHODID, 0x00, &result);
+    if (ACPI_FAILURE(status) || (result & 0xff) || ((result >> 24) & 0xff) == 0xff)
+        return 0;
+    return attr->mode;
+}
+
+/* Added to nitro_sense on models with the win_key_lock quirk */
+static struct attribute_group win_key_lock_attr_group = {
+    .name = "nitro_sense", .attrs = win_key_lock_attrs,
+    .is_visible = win_key_lock_attr_is_visible
+};
+
 /* Four Zoned Keyboard  */
 
 struct get_four_zoned_kb_output
@@ -4036,6 +4113,29 @@ static acpi_status set_kb_status(int mode, int speed, int brightness,
 
     kfree(obj);
     return status;
+}
+
+/*
+ * Some four-zone models keep the keyboard LED zones off until the gaming
+ * system info has been polled and all four zones are switched on with
+ * SET_GAMING_LED. Colours written before that are stored but not shown.
+ */
+#define ACER_GAMING_KBL_SET_ON BIT(3)
+#define ACER_GAMING_KBL_SET_ALL_ZONES GENMASK_ULL(43, 40)
+
+static void gaming_kb_arm_zones(void)
+{
+    acpi_status status;
+
+    status = WMI_gaming_execute_u64(ACER_WMID_GET_GAMING_SYS_INFO_METHODID, 0, NULL);
+    if (ACPI_FAILURE(status))
+        pr_err("Error polling gaming system info: %s\n", acpi_format_exception(status));
+
+    status = WMI_gaming_execute_u64(ACER_WMID_SET_GAMING_LED_METHODID,
+                                    ACER_GAMING_KBL_SET_ON | ACER_GAMING_KBL_SET_ALL_ZONES,
+                                    NULL);
+    if (ACPI_FAILURE(status))
+        pr_err("Error enabling four-zone keyboard LEDs: %s\n", acpi_format_exception(status));
 }
 
 static acpi_status get_kb_status(struct get_four_zoned_kb_output *out)
@@ -4747,6 +4847,8 @@ static int acer_platform_probe(struct platform_device *device)
         err = sysfs_create_group(&device->dev.kobj, &nitro_sense_v4_attr_group);
         if (err)
             goto error_predator_sense;
+        if (quirks->win_key_lock && sysfs_merge_group(&device->dev.kobj, &win_key_lock_attr_group))
+            pr_warn("Failed to add win_key_lock\n");
         acer_predator_state_load();
     }
     if (has_cap(ACER_CAP_NITRO_SENSE) && !has_cap(ACER_CAP_NITRO_SENSE_V4))
@@ -4767,6 +4869,8 @@ static int acer_platform_probe(struct platform_device *device)
         err = sysfs_create_group(&device->dev.kobj, &four_zoned_kb_attr_group);
         if (err)
             goto error_four_zone;
+        if (quirks->kb_zone_arm)
+            gaming_kb_arm_zones();
         four_zone_kb_state_load();
      }
 
@@ -4810,6 +4914,8 @@ static void acer_platform_remove(struct platform_device *device)
     }
     if (has_cap(ACER_CAP_PREDATOR_SENSE) & has_cap(ACER_CAP_NITRO_SENSE_V4))
     {
+        if (quirks->win_key_lock)
+            sysfs_unmerge_group(&device->dev.kobj, &win_key_lock_attr_group);
         sysfs_remove_group(&device->dev.kobj, &nitro_sense_v4_attr_group);
         acer_predator_state_save();
     }
