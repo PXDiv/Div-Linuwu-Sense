@@ -145,20 +145,20 @@ Example (set CPU to 50 and GPU to 70):
 
 ---
 
-#### **6. LCD Override 🖥️**
+#### **6. LCD Overdrive 🖥️**
 
-Reduces LCD latency and minimizes ghosting.
+Reduces LCD latency and minimizes ghosting. The old name, `lcd_override`, still works.
 
 - **1** – Enabled
 - **0** – Disabled
 
 To check the current status:
 
-`cat /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/lcd_override`
+`cat /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/lcd_overdrive`
 
 To change the state:
 
-`echo 1 | sudo tee /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/lcd_override`
+`echo 1 | sudo tee /sys/module/linuwu_sense/drivers/platform:acer-wmi/acer-wmi/predator_sense/lcd_overdrive`
 
 ---
 
