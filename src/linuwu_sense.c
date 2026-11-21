@@ -4183,8 +4183,7 @@ static ssize_t four_zoned_rgb_kb_store(struct device *dev, struct device_attribu
         speed = 0;
         direction = 0;
         break;
-    case 0x1: // Breathing mode: Ignore speed
-        speed = 0;
+    case 0x1: // Breathing mode: Ignore direction
         direction = 0;
         break;
     case 0x2: // Neon mode: Ignore red, green, blue, and direction
