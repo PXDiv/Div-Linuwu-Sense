@@ -464,6 +464,7 @@ struct quirk_entry
     u8 nitro_sense;
     u8 four_zone_kb;
     u8 back_logo; /* back lid logo/lightbar present */
+    u8 kb_zone_arm; /* the keyboard zones must be switched on at probe */
 };
 
 static struct quirk_entry *quirks;
@@ -566,6 +567,12 @@ static struct quirk_entry quirk_acer_nitro_an16_41 = {
 static struct quirk_entry quirk_acer_nitro_an16_43 = {
     .nitro_v4 = 1,
     .four_zone_kb = 1,
+};
+
+static struct quirk_entry quirk_acer_nitro_an515_57 = {
+    .nitro_v4 = 1,
+    .four_zone_kb = 1,
+    .kb_zone_arm = 1,
 };
 
  static struct quirk_entry quirk_acer_nitro_an515_58 = {
@@ -688,6 +695,15 @@ static const struct dmi_system_id acer_quirks[] __initconst = {
              DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-46"),
          },
          .driver_data = &quirk_acer_nitro_an515_58,
+    },
+    {
+        .callback = dmi_matched,
+        .ident = "Acer Nitro AN515-57",
+        .matches = {
+            DMI_MATCH(DMI_SYS_VENDOR, "Acer"),
+            DMI_MATCH(DMI_PRODUCT_NAME, "Nitro AN515-57"),
+        },
+        .driver_data = &quirk_acer_nitro_an515_57,
     },
     {
         .callback = dmi_matched,
@@ -4038,6 +4054,29 @@ static acpi_status set_kb_status(int mode, int speed, int brightness,
     return status;
 }
 
+/*
+ * Some four-zone models keep the keyboard LED zones off until the gaming
+ * system info has been polled and all four zones are switched on with
+ * SET_GAMING_LED. Colours written before that are stored but not shown.
+ */
+#define ACER_GAMING_KBL_SET_ON BIT(3)
+#define ACER_GAMING_KBL_SET_ALL_ZONES GENMASK_ULL(43, 40)
+
+static void gaming_kb_arm_zones(void)
+{
+    acpi_status status;
+
+    status = WMI_gaming_execute_u64(ACER_WMID_GET_GAMING_SYS_INFO_METHODID, 0, NULL);
+    if (ACPI_FAILURE(status))
+        pr_err("Error polling gaming system info: %s\n", acpi_format_exception(status));
+
+    status = WMI_gaming_execute_u64(ACER_WMID_SET_GAMING_LED_METHODID,
+                                    ACER_GAMING_KBL_SET_ON | ACER_GAMING_KBL_SET_ALL_ZONES,
+                                    NULL);
+    if (ACPI_FAILURE(status))
+        pr_err("Error enabling four-zone keyboard LEDs: %s\n", acpi_format_exception(status));
+}
+
 static acpi_status get_kb_status(struct get_four_zoned_kb_output *out)
 {
     u64 in = 1;
@@ -4767,6 +4806,8 @@ static int acer_platform_probe(struct platform_device *device)
         err = sysfs_create_group(&device->dev.kobj, &four_zoned_kb_attr_group);
         if (err)
             goto error_four_zone;
+        if (quirks->kb_zone_arm)
+            gaming_kb_arm_zones();
         four_zone_kb_state_load();
      }
 
