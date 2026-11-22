@@ -22,6 +22,15 @@ make install
 ```
 The make command will remove the current acer_wmi module and load the patched version.
 
+### Surviving kernel updates (DKMS)
+If [DKMS](https://github.com/dkms-project/dkms) is installed, `make install` registers the module with it, and it is rebuilt automatically every time a new kernel is installed. Without DKMS the module is installed for the running kernel only, and `make install` has to be run again after each kernel update.
+```bash
+sudo apt install dkms        # Debian/Ubuntu
+sudo pacman -S dkms          # Arch
+sudo dnf install dkms        # Fedora
+```
+Check it with `dkms status linuwu_sense`. To force the old single-kernel install, use `make install USE_DKMS=0`.
+
 To Uninstall:
 ```bash
 make uninstall
