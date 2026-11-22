@@ -8,6 +8,15 @@ MDIR  := /lib/modules/$(KVER)/kernel/drivers/platform/x86
 MODNAME := linuwu_sense
 REAL_USER := $(shell echo $${SUDO_USER:-$$(whoami)})
 
+# DKMS rebuilds the module automatically whenever a new kernel is installed.
+# It is used when available; pass USE_DKMS=0 to install for $(KVER) only.
+PKGVER    := $(shell sed -n 's/.*define DRIVER_VERSION "\(.*\)".*/\1/p' src/$(MODNAME).c 2>/dev/null)
+SRCDIR    := /usr/src/$(MODNAME)-$(PKGVER)
+DKMS_TREE := /var/lib/dkms/$(MODNAME)
+USE_DKMS  ?= $(if $(shell command -v dkms 2>/dev/null),1,0)
+
+.PHONY: all clean install install-dkms install-legacy install-config uninstall dkms-remove
+
 all:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
 
@@ -31,17 +40,71 @@ uninstall:
 		echo "Group linuwu_sense does not exist."; \
 	fi
 	@sudo rm -f /etc/tmpfiles.d/$(MODNAME).conf
+	@$(MAKE) --no-print-directory dkms-remove
 	@sudo rm -f $(MDIR)/$(MODNAME).ko
 	@sudo depmod -a
 	@echo "Uninstalled $(MODNAME) and cleaned up related configuration."
 
-install: all
-	@sudo rmmod acer_wmi 2>/dev/null || true
-	@echo "blacklist acer_wmi" | sudo tee /etc/modprobe.d/blacklist-acer_wmi.conf > /dev/null
+# Remove every DKMS-registered version of the module and its sources.
+dkms-remove:
+	@for v in $$(ls $(DKMS_TREE) 2>/dev/null | grep -v -e '^original_module$$' -e '^kernel-'); do \
+		echo "Removing $(MODNAME)/$$v from DKMS..."; \
+		sudo dkms remove -m $(MODNAME) -v $$v --all || true; \
+	done
+	@sudo rm -rf /usr/src/$(MODNAME)-*
+
+# Register the sources with DKMS and install for $(KVER), then for every other
+# installed kernel that has headers. DKMS rebuilds (and, where configured,
+# signs) the module for each new kernel from then on. Older installs copied the
+# module straight into a kernel's tree; that copy is removed only after DKMS has
+# built the module for the same kernel, so a failed build never leaves a kernel
+# without a driver.
+install-dkms:
+	@test -n "$(PKGVER)" || { echo "Error: could not read DRIVER_VERSION from src/$(MODNAME).c"; exit 1; }
+	@$(MAKE) --no-print-directory dkms-remove
+	sudo install -d $(SRCDIR)/src
+	sudo install -m 644 dkms.conf Makefile $(SRCDIR)/
+	sudo install -m 644 $(filter-out %.mod.c,$(wildcard src/*.c src/*.h)) $(SRCDIR)/src/
+	sudo sed -i 's/^PACKAGE_VERSION=.*/PACKAGE_VERSION="$(PKGVER)"/' $(SRCDIR)/dkms.conf
+	sudo dkms add -m $(MODNAME) -v $(PKGVER)
+	sudo dkms build -m $(MODNAME) -v $(PKGVER) -k $(KVER)
+	sudo rm -f $(MDIR)/$(MODNAME).ko
+	sudo dkms install -m $(MODNAME) -v $(PKGVER) -k $(KVER)
+	@# Best effort for the other installed kernels that have headers.
+	@for k in $$(ls /lib/modules); do \
+		[ "$$k" != "$(KVER)" ] && [ -e "/lib/modules/$$k/build/Makefile" ] || continue; \
+		if sudo dkms build -m $(MODNAME) -v $(PKGVER) -k "$$k" > /dev/null 2>&1; then \
+			sudo rm -f "/lib/modules/$$k/kernel/drivers/platform/x86/$(MODNAME).ko"; \
+			sudo dkms install -m $(MODNAME) -v $(PKGVER) -k "$$k" > /dev/null 2>&1 \
+				&& echo "Also installed for kernel $$k."; \
+		else \
+			echo "Note: could not build for kernel $$k, left it unchanged."; \
+		fi; \
+	done
+
+# Previous behaviour: copy the module into $(KVER)'s tree only. It has to be
+# reinstalled after every kernel update.
+install-legacy: all
 	sudo install -d $(MDIR)
 	sudo install -m 644 src/$(MODNAME).ko $(MDIR)
 	sudo depmod -a
+
+install:
+	@sudo rmmod acer_wmi 2>/dev/null || true
+	@echo "blacklist acer_wmi" | sudo tee /etc/modprobe.d/blacklist-acer_wmi.conf > /dev/null
+ifeq ($(USE_DKMS),1)
+	@$(MAKE) --no-print-directory install-dkms
+else
+	@echo "Installing $(MODNAME) for kernel $(KVER) only (no DKMS)."
+	@echo "After a kernel update run 'make install' again, or install dkms so it happens automatically."
+	@$(MAKE) --no-print-directory install-legacy
+endif
+	@$(MAKE) --no-print-directory install-config
+
+install-config:
 	@echo "$(MODNAME)" | sudo tee /etc/modules-load.d/$(MODNAME).conf > /dev/null
+	@# Reload, so an older copy that is still loaded is replaced by the new one.
+	@sudo rmmod $(MODNAME) 2>/dev/null || true
 	sudo modprobe $(MODNAME)
 	@sudo cp linuwu_sense.service /etc/systemd/system/
 	@sudo systemctl daemon-reload
