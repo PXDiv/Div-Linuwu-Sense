@@ -4,6 +4,13 @@ KVER  ?= $(shell uname -r)
 KDIR  := /lib/modules/$(KVER)/build
 PWD   := $(shell pwd)
 
+# Build with the kernel's own compiler: Clang-built kernels (CachyOS default)
+# need LLVM=1, GCC-built ones (e.g. CachyOS LTS) fail with it.
+ifneq ($(shell grep -s '^CONFIG_CC_IS_CLANG=y' $(KDIR)/.config),)
+LLVM ?= 1
+export LLVM
+endif
+
 MDIR  := /lib/modules/$(KVER)/kernel/drivers/platform/x86
 MODNAME := linuwu_sense
 REAL_USER := $(shell echo $${SUDO_USER:-$$(whoami)})
