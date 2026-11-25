@@ -49,6 +49,7 @@
 #include <linux/bitfield.h>
 #include <linux/bitmap.h>
 #include <linux/delay.h>
+#include <linux/power_supply.h>
 
 #include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6,12,0)
@@ -1819,6 +1820,49 @@ WMI_gaming_execute_u64(u32 method_id, u64 in, u64 *out)
     return status;
 }
 
+/*
+ * Some Nitro models report battery through the gaming WMI status for a
+ * minute or two after the charger is plugged in, which blocks the AC-only
+ * profiles. Prefer the AC adapter's power supply state; fall back to WMI
+ * when no adapter is registered (power_supply_is_system_supplied() would
+ * report mains in that case).
+ */
+struct acer_mains_state
+{
+    bool found;
+    bool online;
+};
+
+static int acer_check_mains(struct power_supply *psy, void *data)
+{
+    struct acer_mains_state *mains = data;
+    union power_supply_propval val;
+
+    if (psy->desc->type != POWER_SUPPLY_TYPE_MAINS)
+        return 0;
+
+    mains->found = true;
+    if (!power_supply_get_property(psy, POWER_SUPPLY_PROP_ONLINE, &val) && val.intval)
+        mains->online = true;
+
+    return 0;
+}
+
+static acpi_status acer_get_on_ac(u64 *on_AC)
+{
+    struct acer_mains_state mains = {};
+
+    power_supply_for_each_psy(&mains, acer_check_mains);
+    if (mains.found)
+    {
+        *on_AC = mains.online;
+        return AE_OK;
+    }
+
+    return WMI_gaming_execute_u64(ACER_WMID_GET_GAMING_SYS_INFO_METHODID,
+                                  ACER_WMID_CMD_GET_PREDATOR_V4_BAT_STATUS, on_AC);
+}
+
 static int WMI_gaming_execute_u32_u64(u32 method_id, u32 in, u64 *out)
 {
     struct acpi_buffer result = {ACPI_ALLOCATE_BUFFER, NULL};
@@ -2334,9 +2378,7 @@ acer_predator_v4_platform_profile_set(struct device *dev,
     u64 on_AC;
 
     /* Check Power Source */
-    status = WMI_gaming_execute_u64(
-        ACER_WMID_GET_GAMING_SYS_INFO_METHODID,
-        ACER_WMID_CMD_GET_PREDATOR_V4_BAT_STATUS, &on_AC);
+    status = acer_get_on_ac(&on_AC);
 
     if (ACPI_FAILURE(status))
         return -EIO;
@@ -2581,9 +2623,7 @@ static int acer_thermal_profile_change(void)
         if (err)
             return err;
         /* Check power source */
-        status = WMI_gaming_execute_u64(
-            ACER_WMID_GET_GAMING_SYS_INFO_METHODID,
-            ACER_WMID_CMD_GET_PREDATOR_V4_BAT_STATUS, &on_AC);
+        status = acer_get_on_ac(&on_AC);
 
         if (ACPI_FAILURE(status))
             return -EIO;
@@ -3765,9 +3805,7 @@ static int acer_predator_state_load(void)
     }
 
     /* Always proceed to restore state based on power source */
-    status = WMI_gaming_execute_u64(
-        ACER_WMID_GET_GAMING_SYS_INFO_METHODID,
-        ACER_WMID_CMD_GET_PREDATOR_V4_BAT_STATUS, &on_AC);
+    status = acer_get_on_ac(&on_AC);
 
     if (ACPI_FAILURE(status))
     {
@@ -3794,9 +3832,7 @@ static int acer_predator_state_save(void)
     struct file *file;
     ssize_t len;
 
-    status = WMI_gaming_execute_u64(
-        ACER_WMID_GET_GAMING_SYS_INFO_METHODID,
-        ACER_WMID_CMD_GET_PREDATOR_V4_BAT_STATUS, &on_AC);
+    status = acer_get_on_ac(&on_AC);
     if (ACPI_FAILURE(status))
         return -1;
 
